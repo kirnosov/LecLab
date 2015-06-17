@@ -2,7 +2,9 @@ source("helpers.R")
 library(shiny)
 library(reshape2)
 library(knitr)
-
+library(ggplot2)
+library(htmlwidgets)
+library(Cairo)
 
 shinyServer(function(input, output,session) {
 
@@ -28,11 +30,21 @@ shinyServer(function(input, output,session) {
         sigma <- sqrt(var(melted$value,na.rm = TRUE))
         
         
+        
         output$ui_cb <- renderUI({
                 checkboxGroupInput('col_choices', 'Select features to display:',
                                    choices=names(total_mean)[-1])
         })
         
+        output$ui_cb_obj <- renderUI({
+        checkboxGroupInput('obj_choices', 'Select objective parameters:',
+                           choices=input$col_choices)
+        })
+        
+        output$ui_cb_subj <- renderUI({
+                checkboxGroupInput('subj_choices', 'Select subjective parameters:',
+                                   choices=input$col_choices)
+        })
         
         observe({
                 updateCheckboxGroupInput(
@@ -40,8 +52,41 @@ shinyServer(function(input, output,session) {
                         selected = if (input$bar) names(total_mean)[-1]
                 )
         })
+        #########
         
+        output$plot1 <- renderPlot({
+                validate(
+                        need(input$obj_choices != "", "Please select objective categories")
+                )
+                validate(
+                        need(input$subj_choices != "", "Please select subjective categories")
+                )
+                d <- data.frame(subjective = apply(total_mean[names(total_mean) %in% input$subj_choices],1,mean),
+                                objective = apply(total_mean[names(total_mean) %in% input$obj_choices],1,mean),
+                                section = total_mean$SectionID)
+                ggplot() + geom_point(data=d, aes(objective,subjective),color="blue")+ 
+                        geom_abline(slope = 1,intercept = 0.0,lty=4,color="gray")+ 
+                        geom_abline(slope = 1,intercept = sigma,lty=2,color="green") + 
+                        geom_abline(slope = 1,intercept = -sigma,lty=2,color="green")+ 
+                        geom_abline(slope = 1,intercept = 2*sigma,lty=2,color="red") + 
+                        geom_abline(slope = 1,intercept = -2*sigma,lty=2,color="red")
+                })
+        output$click_info <- renderPrint({
+                # Because it's a ggplot2, we don't need to supply xvar or yvar; if this
+                # were a base graphics plot, we'd need those.
+                d <- data.frame(subjective = apply(total_mean[names(total_mean) %in% input$subj_choices],1,mean),
+                                objective = apply(total_mean[names(total_mean) %in% input$obj_choices],1,mean),
+                                section = total_mean$SectionID)
+                nearPoints(d, input$plot1_click, addDist = FALSE)
+        })
         
+        output$brush_info <- renderPrint({
+                d <- data.frame(subjective = apply(total_mean[names(total_mean) %in% input$subj_choices],1,mean),
+                                objective = apply(total_mean[names(total_mean) %in% input$obj_choices],1,mean),
+                                section = total_mean$SectionID)
+                brushedPoints(d, input$plot1_brush)
+        })
+        #########
         output$text1 <- renderText({
          t <- paste(
                 sort(as.character(unique(
@@ -50,12 +95,12 @@ shinyServer(function(input, output,session) {
                 ", ")
          t
         })
-        
+        ###########
         output$view <- renderDataTable({
                 library(ggplot2)
                 total_mean[,c("SectionID",input$col_choices), drop = FALSE]
         })
-        
+        ############
         output$ui_si_1 <- renderUI({
                 selectInput("section1", "Select sections:", 
                             choices= c("None",sort(as.character
