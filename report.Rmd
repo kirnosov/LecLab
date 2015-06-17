@@ -1,0 +1,93 @@
+```{r, echo=FALSE, message=FALSE}
+library(pander)
+Read_all_files <- function(directory){
+        ## read all files from a directory
+        files <- list.files(path = directory,pattern="*.csv")  #get all files listed
+        data <- data.frame()
+        for (i in 1:length(files)){ #cycle over all csv files
+                temp <- read.csv(file.path(directory,files[i])) #read file
+                #add new data 
+                data <- rbind(data,temp)
+        }
+        return(data)
+}
+
+Call_SectionID <- function(data){
+        ## use to replace section column name with SectionID
+        ## use as : names(data) <- Call_SectionID(data)
+        section_header <- grep("section", names(data), value = TRUE, ignore.case = TRUE)
+        section_index <- match(section_header,names(data))
+        names(data)[section_index] <- "SectionID"
+        return(names(data))
+}
+
+Tidy_Data <- function(raw_data,func){
+        names(raw_data) <- Call_SectionID(raw_data)
+        choice <- as.logical((names(raw_data) == "SectionID") 
+                             + as.vector(sapply(raw_data, is.numeric)))
+        raw_data <- raw_data[,choice]
+        global_means <- apply(raw_data[-1],2, function(x) mean(x,na.rm=TRUE))
+        global_max <- apply(raw_data[-1],2, function(x) max(x,na.rm=TRUE))
+        tidy_data<-aggregate(. ~SectionID, raw_data, func)
+        out_data <- subset(tidy_data,select="SectionID")
+        for (i in seq(1,length(global_means),1)){ 
+                temp <- (tidy_data[i+1] - global_means[i])/global_max[i]*100
+                out_data <- cbind(out_data,temp)
+        }
+        return(out_data)
+     #   return(tidy_data)
+}
+
+Make_BarPlot <- function(data,section_filter,column_filter,size,angle,range){
+        delta_max <- max(data$value,na.rm = TRUE)
+        delta_min <- min(data$value,na.rm = TRUE)
+        sigma <- sqrt(var(data$value,na.rm = TRUE))
+        plot_data <- subset(data,SectionID==section_filter)
+        par(mar=c(0,0.5+4*size,0,0), oma = c(0,0.5+2*size,0,0))
+        x <- barplot(plot_data$value[plot_data$variable %in% column_filter],
+#                names.arg =plot_data$variable[plot_data$variable %in% column_filter],
+                axes = FALSE, axisnames = FALSE,
+                ylim=c(-range*sigma,range*sigma),
+                cex.names = size,cex.lab=0.65,las=2)
+        text(cex=size, x=x+0.5, y=ifelse(angle>0.0,-0.5,0.5), 
+             labels = plot_data$variable[plot_data$variable %in% column_filter], 
+             xpd=TRUE, srt=angle, pos=2)
+        axis(2)
+        abline(h=0.0,col=1,lwd=3)
+        abline(h=sigma,col=3,lwd=2)
+        abline(h=-sigma,col=3,lwd=2)
+        abline(h=2*sigma,col=2,lwd=2)
+        abline(h=-2*sigma,col=2,lwd=2)
+}
+```
+
+```{r, echo=FALSE, message=FALSE}
+path <- file.path(src)
+path <- substr(path, 1, nchar(path)-10)
+
+        if(input$ds == 'S'){
+                LabData <- Read_all_files(paste0(path,"Sample/lab"))
+                LectureData <- Read_all_files(paste0(path,"Sample/lecture"))
+        }
+        
+        if(input$ds == 'ZIP'){
+                unzip(input$file1$datapath,exdir = paste0(path,"ZIP"))
+                LabData <- Read_all_files(paste0(path,"ZIP/lab"))
+                LectureData <- Read_all_files(paste0(path,"ZIP/lecture"))
+       }
+
+        tidy_lab_mean <- Tidy_Data(LabData,mean)
+        tidy_lec_mean <- Tidy_Data(LectureData,mean)
+        total_mean <- merge(tidy_lab_mean,tidy_lec_mean,by="SectionID",all=TRUE)
+        names(total_mean) <- strtrim(names(total_mean), 25)
+        total_mean <- total_mean[complete.cases(total_mean),]
+        
+        melted <- melt(total_mean,id="SectionID")
+        sigma <- sqrt(var(melted$value,na.rm = TRUE))
+```
+
+
+```{r pander, echo=FALSE}
+panderOptions("digits", 2)
+pander(total_mean,split.table=200)
+```
